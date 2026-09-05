@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>SCRIBBLE — notebook wave shooter</title>
+<style>
+  /* Patrick Hand + Gaegu, SIL Open Font License (vendor/fonts/OFL.txt) */
+  @font-face { font-family: "Patrick Hand"; font-style: normal; font-weight: 400; font-display: swap; src: url("vendor/fonts/PatrickHand-Regular-latin.woff2") format("woff2"); }
+  @font-face { font-family: "Gaegu"; font-style: normal; font-weight: 700; font-display: swap; src: url("vendor/fonts/Gaegu-Bold-latin.woff2") format("woff2"); }
+  :root {
+    --paper: #f4efe2;
+    --ink: #2b34b4;
+    --ink-soft: rgba(43, 52, 180, 0.55);
+    --red: #d4232b;
+    --rule: rgba(96, 128, 205, 0.32);
+    --margin: rgba(224, 84, 96, 0.55);
+    --font: "Patrick Hand", "Segoe Print", "Bradley Hand", "Comic Sans MS", cursive;
+    --font-big: "Gaegu", "Patrick Hand", "Segoe Print", "Comic Sans MS", cursive;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--paper); color: var(--ink); font-family: var(--font); touch-action: none; user-select: none; -webkit-user-select: none; }
+  #paper {
+    position: absolute; inset: 0; z-index: 0; background: var(--paper);
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.35 0 0 0 0 0.3 0 0 0 0 0.2 0 0 0 0.16 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  }
+  #gl { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; display: block; cursor: none; }
+  #slow { position: absolute; inset: 0; z-index: 5; pointer-events: none; opacity: 0; background: rgba(110, 118, 205, 0.28); mix-blend-mode: multiply; transition: opacity .12s; }
+  #lines {
+    position: absolute; inset: 0; z-index: 3; pointer-events: none; mix-blend-mode: multiply;
+    background-image:
+      repeating-linear-gradient(to bottom, transparent 0, transparent 59px, var(--rule) 59px, var(--rule) 60.5px),
+      linear-gradient(to right, transparent 0, transparent 6.9vw, var(--margin) 6.9vw, var(--margin) calc(6.9vw + 2px), transparent calc(6.9vw + 2px));
+    background-position: 0 28px, 0 0;
+  }
+  #fx { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
+  #tint { position: absolute; inset: 0; z-index: 5; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, rgba(230, 80, 90, 0.08) 0%, rgba(220, 60, 70, 0.34) 100%); }
+  #scope { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+  #scope .ring { position: absolute; left: 50%; top: 50%; width: min(62vh, 62vw); height: min(62vh, 62vw); transform: translate(-50%, -50%); border-radius: 50%; border: 3px solid var(--ink); box-shadow: 0 0 0 200vmax var(--paper); }
+  #scope .h, #scope .v { position: absolute; left: 50%; top: 50%; background: repeating-linear-gradient(to right, var(--ink) 0 10px, transparent 10px 18px); }
+  #scope .h { width: min(62vh, 62vw); height: 2px; transform: translate(-50%, -50%); }
+  #scope .v { width: 2px; height: min(62vh, 62vw); transform: translate(-50%, -50%); background: repeating-linear-gradient(to bottom, var(--ink) 0 10px, transparent 10px 18px); }
+  #scope .dot { position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; border: 2px dashed var(--ink); border-radius: 50%; transform: translate(-50%, -50%); }
+
+  /* ---------- HUD ---------- */
+  #hud { position: absolute; inset: 0; z-index: 6; pointer-events: none; mix-blend-mode: multiply; }
+  #hud > * { position: absolute; }
+  #score { left: 9vw; top: 3.2vh; font-size: clamp(18px, 2.8vh, 34px); }
+  #combo { left: 9vw; top: calc(3.2vh + clamp(22px, 3.6vh, 40px)); font-size: clamp(13px, 1.9vh, 22px); color: var(--red); }
+  #wave-info { right: 4vw; top: 3.2vh; text-align: right; }
+  #wave { font-size: clamp(18px, 2.8vh, 34px); }
+  #left { font-size: clamp(14px, 2.3vh, 26px); margin-top: 0.9vh; }
+  #next { font-size: clamp(12px, 1.8vh, 20px); color: var(--red); margin-top: 0.4vh; min-height: 1em; }
+  #boss { left: 50%; top: 5vh; transform: translateX(-50%); width: min(44vw, 520px); text-align: center; }
+  #boss .name { font-size: clamp(12px, 1.9vh, 20px); letter-spacing: 1px; }
+  #boss .bar { height: 12px; border: 2px solid var(--ink); border-radius: 6px; margin-top: 4px; overflow: hidden; background: rgba(244,239,226,.6); }
+  #boss .fill { height: 100%; width: 100%; background: repeating-linear-gradient(-45deg, var(--red) 0 3px, rgba(212,35,43,.25) 3px 7px); transition: width .15s; }
+  #banner { left: 50%; top: 24vh; transform: translateX(-50%); text-align: center; opacity: 0; transition: opacity .35s; white-space: nowrap; }
+  #banner.show { opacity: 1; }
+  #banner .big { font-family: var(--font-big); font-size: clamp(34px, 8vh, 84px); letter-spacing: 3px; line-height: 1; }
+  #banner .sub { font-size: clamp(14px, 2.6vh, 26px); margin-top: 0.6vh; }
+  #tip { left: 50%; bottom: 17vh; transform: translateX(-50%); font-size: clamp(13px, 2.2vh, 22px); opacity: 0; transition: opacity .4s; white-space: nowrap; }
+  #tip.show { opacity: .95; }
+  #popups { right: 4vw; top: 30vh; display: flex; flex-direction: column; align-items: flex-end; gap: 0.5vh; }
+  .popup { font-size: clamp(14px, 2.3vh, 24px); white-space: nowrap; animation: popup 1.6s ease-out forwards; }
+  .popup .pts { color: var(--red); margin-left: 6px; }
+  .popup.small { font-size: clamp(12px, 1.8vh, 18px); }
+  .popup.big { font-size: clamp(18px, 3vh, 32px); }
+  .popup.green .lbl { color: #2a7d40; }
+  @keyframes popup { 0% { opacity: 0; transform: translateX(10px) } 10% { opacity: 1; transform: translateX(0) } 75% { opacity: 1 } 100% { opacity: 0 } }
+  #hp-row { left: 9vw; bottom: 14vh; display: flex; align-items: center; gap: 10px; font-size: clamp(14px, 2.3vh, 24px); }
+  #hp-row .bar { width: min(22vw, 210px); height: 12px; border: 2px solid var(--ink); border-radius: 7px; overflow: hidden; background: rgba(244,239,226,.5); }
+  #hp-row .fill { height: 100%; width: 100%; background: repeating-linear-gradient(-55deg, var(--ink) 0 2px, transparent 2px 6px); transition: width .12s; }
+  #ammo { left: 9vw; bottom: 4.5vh; line-height: 1; }
+  #ammo-mag { font-size: clamp(28px, 5vh, 52px); font-family: var(--font-big); }
+  #ammo-res { font-size: clamp(14px, 2.3vh, 24px); }
+  #ammo-state { font-size: clamp(12px, 1.8vh, 18px); color: var(--red); margin-left: 8px; }
+  #tally { display: block; margin-top: 4px; }
+  #weapons { right: 4vw; bottom: 14vh; text-align: right; font-size: clamp(11px, 1.7vh, 17px); }
+  .wrow { display: grid; grid-template-columns: 22px auto 64px; gap: 8px; align-items: baseline; opacity: .5; line-height: 1.55; }
+  .wrow.on { opacity: 1; font-size: 1.12em; border-bottom: 1.5px solid var(--ink); }
+  .wrow:nth-child(2) { margin-right: 5px; } .wrow:nth-child(3) { margin-right: 9px; } .wrow:nth-child(4) { margin-right: 3px; } .wrow:nth-child(5) { margin-right: 7px; }
+  .wrow .slot { display: inline-block; width: 18px; height: 18px; border: 1.5px solid var(--ink-soft); border-radius: 4px; font-size: .8em; text-align: center; line-height: 16px; justify-self: end; }
+  .wrow .wn { text-align: left; }
+  .wrow .wa { text-align: right; opacity: .8; font-size: .85em; }
+  #wname { right: 4vw; bottom: 7.5vh; font-size: clamp(20px, 3.4vh, 36px); font-family: var(--font-big); }
+  #wdesc { right: 4vw; bottom: 4.5vh; font-size: clamp(12px, 1.9vh, 19px); }
+  #slash { left: 4.6vw; top: 38vh; width: 36px; text-align: center; font-size: 11px; letter-spacing: 2px; }
+  #slash .pill { width: 18px; height: 20vh; margin: 6px auto 0; border: 2px solid var(--ink); border-radius: 10px; position: relative; overflow: hidden; background: rgba(244,239,226,.5); }
+  #slash .fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: repeating-linear-gradient(-55deg, var(--ink) 0 2px, transparent 2px 6px); transition: height .15s; }
+  #slash.ready .fill { background: repeating-linear-gradient(-55deg, var(--red) 0 3px, rgba(212,35,43,.3) 3px 6px); }
+  #slash-ready { position: absolute; left: 44px; top: 24vh; white-space: nowrap; color: var(--red); font-size: clamp(12px, 1.9vh, 18px); letter-spacing: 0; }
+
+  /* ---------- overlays ---------- */
+  #overlay { position: absolute; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; text-align: center; background: rgba(244, 239, 226, 0.55); cursor: pointer; }
+  #overlay.hidden { display: none; }
+  #overlay .card { padding: 24px; max-width: 92vw; }
+  #overlay h1 { font-family: var(--font-big); font-size: clamp(56px, 14vh, 140px); letter-spacing: 6px; line-height: .9; }
+  #overlay h2 { font-family: var(--font-big); font-size: clamp(40px, 10vh, 100px); letter-spacing: 4px; line-height: 1; }
+  #overlay .sub { font-size: clamp(14px, 2.4vh, 22px); margin-top: 6px; opacity: .8; }
+  #overlay .controls { margin: 22px auto 0; display: grid; grid-template-columns: auto auto; gap: 4px 18px; font-size: clamp(13px, 2.1vh, 19px); text-align: left; width: max-content; max-width: 90vw; }
+  #overlay .controls .k { text-align: right; color: var(--red); }
+  #overlay .go { margin-top: 26px; font-size: clamp(16px, 2.8vh, 26px); animation: blink 1.6s infinite; }
+  @keyframes blink { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }
+  #best { margin-top: 8px; font-size: clamp(13px, 2vh, 18px); color: var(--red); min-height: 1.2em; }
+  #dead-score { font-size: clamp(18px, 3.4vh, 34px); margin-top: 8px; }
+  .credit { margin-top: 18px; font-size: 12px; opacity: .5; }
+
+  /* ---------- touch ---------- */
+  #touch { position: absolute; inset: 0; z-index: 7; }
+  #touch-zone { position: absolute; inset: 0; }
+  #stick { position: absolute; width: 120px; height: 120px; border-radius: 50%; border: 2px solid var(--ink-soft); display: none; pointer-events: none; }
+  #stick.on { display: block; }
+  #stick .nub { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; background: var(--ink-soft); }
+  .tbtn { position: absolute; width: 58px; height: 58px; border-radius: 50%; border: 2px solid var(--ink); background: rgba(244,239,226,.75); font-family: var(--font); font-size: 13px; color: var(--ink); display: flex; align-items: center; justify-content: center; }
+  #t-fire { right: 4vw; bottom: 22vh; width: 84px; height: 84px; font-size: 17px; border-color: var(--red); color: var(--red); }
+  #t-aim { right: calc(4vw + 96px); bottom: 24vh; }
+  #t-jump { right: calc(4vw + 100px); bottom: 34vh; }
+  #t-grapple { right: 4vw; bottom: 40vh; }
+  #t-reload { right: calc(4vw + 160px); bottom: 26vh; }
+  #t-dash { right: calc(4vw + 60px); bottom: 45vh; }
+  #t-swap { right: 4vw; bottom: 50vh; }
+  body.touch #weapons, body.touch #wdesc { display: none; }
+  body.touch #wname { bottom: 4.5vh; }
+  body.touch #tip { bottom: 30vh; font-size: 14px; }
+  body.touch #hp-row { bottom: 24vh; font-size: 15px; }
+  body.touch #hp-row .bar { width: 120px; height: 10px; }
+  body.touch #ammo { bottom: 5vh; }
+  body.touch #ammo-mag { font-size: 34px; }
+  body.touch #ammo-res { font-size: 16px; }
+  body.touch #banner { top: 12vh; }
+  body.touch #banner .big { font-size: 40px; }
+  body.touch #banner .sub { font-size: 15px; }
+  body.touch #slash { top: 30vh; left: 3vw; } body.touch #slash .pill { height: 14vh; }
+  body.touch #score, body.touch #wave { font-size: 18px; } body.touch #left { font-size: 14px; }
+  body.touch #overlay .controls { display: none; }
+  @media (max-width: 720px) {
+    #score { font-size: 18px; } #wave { font-size: 18px; } #left { font-size: 14px; }
+    #hp-row { bottom: 9vh; } #hp-row .bar { width: 120px; }
+    #ammo { bottom: 3vh; } #slash { top: 30vh; } #slash .pill { height: 16vh; }
+    #banner .big { font-size: 40px; } #banner { top: 18vh; }
+  }
+</style>
+</head>
+<body>
+<div id="paper"></div>
+<canvas id="gl"></canvas>
+<div id="lines"></div>
+<canvas id="fx"></canvas>
+<div id="tint"></div>
+<div id="slow"></div>
+<div id="scope" hidden><div class="ring"></div><div class="h"></div><div class="v"></div><div class="dot"></div></div>
+
+<div id="hud">
+  <div id="score">SCORE 0</div>
+  <div id="combo"></div>
+  <div id="wave-info"><div id="wave">WAVE 1</div><div id="left"></div><div id="next"></div></div>
+  <div id="boss" hidden><div class="name">THE DOODLER</div><div class="bar"><div class="fill" id="boss-fill"></div></div></div>
+  <div id="banner"><div class="big" id="banner-big"></div><div class="sub" id="banner-sub"></div></div>
+  <div id="tip"></div>
+  <div id="popups"></div>
+  <div id="hp-row"><span>HP</span><div class="bar"><div class="fill" id="hp-fill"></div></div><span id="hp-num">100</span></div>
+  <div id="ammo"><span id="ammo-mag">30</span><span id="ammo-res">/150</span><span id="ammo-state"></span><canvas id="tally"></canvas></div>
+  <div id="weapons"></div>
+  <div id="wname">RIFLE</div>
+  <div id="wdesc">auto · aim for the holo sight</div>
+  <div id="slash" hidden><div class="label">KATANA</div><div class="pill"><div class="fill" id="slash-fill"></div></div><div id="slash-ready"></div></div>
+</div>
+
+<div id="touch" hidden>
+  <div id="touch-zone"></div>
+  <div id="stick"><div class="nub"></div></div>
+  <div class="tbtn" id="t-fire">FIRE</div>
+  <div class="tbtn" id="t-aim">AIM</div>
+  <div class="tbtn" id="t-jump">JUMP</div>
+  <div class="tbtn" id="t-grapple">HOOK</div>
+  <div class="tbtn" id="t-reload">RLD</div>
+  <div class="tbtn" id="t-dash">DASH</div>
+  <div class="tbtn" id="t-swap">SWAP</div>
+</div>
+
+<div id="overlay">
+  <div class="card">
+    <div id="ov-title">
+      <h1>SCRIBBLE</h1>
+      <div class="sub">notebook wave shooter · drawn in ballpoint</div>
+      <div id="best"></div>
+      <div class="controls">
+        <span class="k">WASD</span><span>move</span>
+        <span class="k">mouse</span><span>look · left click fires · right click aims / blocks</span>
+        <span class="k">space</span><span>jump</span>
+        <span class="k">E</span><span>grapple · pull yourself to a surface or yank an enemy</span>
+        <span class="k">1-5 / wheel</span><span>rifle · shotgun · revolver · sniper · katana</span>
+        <span class="k">R</span><span>reload</span>
+        <span class="k">shift</span><span>dash-execute when the slash meter is full</span>
+        <span class="k">M</span><span>mute</span>
+      </div>
+      <div class="go">CLICK TO START</div>
+    </div>
+    <div id="ov-pause" hidden>
+      <h2>PAUSED</h2>
+      <div class="go">CLICK TO RESUME</div>
+    </div>
+    <div id="ov-dead" hidden>
+      <h2>ERASED</h2>
+      <div id="dead-score"></div>
+      <div id="best-dead"></div>
+      <div class="go">CLICK TO SCRIBBLE AGAIN</div>
+    </div>
+  </div>
+</div>
+
+<script src="vendor/three.min.js"></script>
+<script src="js/ink.js"></script>
+<script src="js/level.js"></script>
+<script src="js/fx.js"></script>
+<script src="js/enemies.js"></script>
+<script src="js/player.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
